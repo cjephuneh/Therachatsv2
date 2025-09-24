@@ -133,8 +133,10 @@ export class RealtimeService extends EventEmitter {
           console.log('✅ Connected to Azure OpenAI Realtime API');
           this.isConnected = true;
           
-          // Send initial session setup message
-          this.sendSessionSetup();
+          // Send initial session setup message after a short delay
+          setTimeout(() => {
+            this.sendSessionSetup();
+          }, 500);
           
           this.emit('connected');
           resolve();
@@ -224,32 +226,22 @@ export class RealtimeService extends EventEmitter {
     }
 
     try {
+      // Send a simple session update to configure the session
       const setupMessage = {
         type: 'session.update',
         session: {
           modalities: ['text', 'audio'],
-          instructions: 'You are TheraChat, a supportive mental health companion. Provide empathetic, helpful responses.',
+          instructions: 'You are TheraChat, a supportive mental health companion.',
           voice: 'alloy',
           input_audio_format: 'pcm16',
           output_audio_format: 'pcm16',
-          input_audio_transcription: {
-            model: 'whisper-1'
-          },
-          turn_detection: {
-            type: 'server_vad',
-            threshold: 0.5,
-            prefix_padding_ms: 300,
-            silence_duration_ms: 200
-          },
-          tools: [],
-          tool_choice: 'auto',
-          temperature: 0.8,
-          max_response_output_tokens: 4096
+          temperature: 0.8
         }
       };
 
-      console.log('📤 Sending session setup:', setupMessage);
+      console.log('📤 Sending session setup:', JSON.stringify(setupMessage, null, 2));
       this.websocket.send(JSON.stringify(setupMessage));
+      
     } catch (error) {
       console.error('❌ Error sending session setup:', error);
       this.emit('error', error);
@@ -365,6 +357,7 @@ export class RealtimeService extends EventEmitter {
 
       case 'error':
         console.error('❌ API Error:', messageData);
+        console.error('❌ Error details:', JSON.stringify(messageData, null, 2));
         this.emit('error', messageData);
         break;
 
