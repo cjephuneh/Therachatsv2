@@ -57,29 +57,13 @@ export interface RealtimeMessage {
         'session.response.audio_buffer.committed' |
         'session.response.text.interim' |
         'session.response.text.final' |
-        'error' |
         'session.created' |
         'session.updated' |
+        'session.ready' |
         'session.deleted' |
         'session.ended' |
-        'session.audio_buffer.speech_started' |
-        'session.audio_buffer.speech_stopped' |
-        'session.audio_buffer.speech_ended' |
-        'session.audio_buffer.committed' |
-        'session.transcript.interim' |
-        'session.transcript.final' |
-        'session.response.audio_buffer.speech_started' |
-        'session.response.audio_buffer.speech_stopped' |
-        'session.response.audio_buffer.speech_ended' |
-        'session.response.audio_buffer.committed' |
-        'session.response.text.interim' |
-        'session.response.text.final' |
-        'error' |
-        'session.created' |
-        'session.updated' |
-        'session.deleted' |
-        'session.ended';
-  data: any;
+        'error';
+  data?: any;
 }
 
 export class RealtimeService extends EventEmitter {
@@ -148,16 +132,43 @@ export class RealtimeService extends EventEmitter {
         this.websocket.onopen = () => {
           console.log('✅ Connected to Azure OpenAI Realtime API');
           this.isConnected = true;
+          
+          // Send initial session setup message
+          this.sendSessionSetup();
+          
           this.emit('connected');
           resolve();
         };
 
         this.websocket.onmessage = (event) => {
           try {
-            const message = JSON.parse(event.data);
+            console.log('📨 Raw WebSocket message:', event.data);
+            
+            // Try to parse as JSON
+            let message;
+            try {
+              message = JSON.parse(event.data);
+            } catch (parseError) {
+              console.error('❌ Failed to parse message as JSON:', event.data);
+              console.error('❌ Parse error:', parseError);
+              return;
+            }
+            
+            // Handle different message formats
+            if (typeof message === 'string') {
+              // If it's a string, try to parse it again
+              try {
+                message = JSON.parse(message);
+              } catch (e) {
+                console.error('❌ Failed to parse string message:', message);
+                return;
+              }
+            }
+            
             this.handleMessage(message);
           } catch (error) {
-            console.error('❌ Error parsing message:', error);
+            console.error('❌ Error processing WebSocket message:', error);
+            console.error('❌ Raw message data:', event.data);
             this.emit('error', error);
           }
         };
@@ -205,20 +216,86 @@ export class RealtimeService extends EventEmitter {
     return wsUrl;
   }
 
+  // Send initial session setup message
+  private sendSessionSetup(): void {
+    if (!this.websocket || !this.isConnected) {
+      console.warn('⚠️ Cannot send session setup: WebSocket not connected');
+      return;
+    }
+
+    try {
+      const setupMessage = {
+        type: 'session.update',
+        session: {
+          modalities: ['text', 'audio'],
+          instructions: 'You are TheraChat, a supportive mental health companion. Provide empathetic, helpful responses.',
+          voice: 'alloy',
+          input_audio_format: 'pcm16',
+          output_audio_format: 'pcm16',
+          input_audio_transcription: {
+            model: 'whisper-1'
+          },
+          turn_detection: {
+            type: 'server_vad',
+            threshold: 0.5,
+            prefix_padding_ms: 300,
+            silence_duration_ms: 200
+          },
+          tools: [],
+          tool_choice: 'auto',
+          temperature: 0.8,
+          max_response_output_tokens: 4096
+        }
+      };
+
+      console.log('📤 Sending session setup:', setupMessage);
+      this.websocket.send(JSON.stringify(setupMessage));
+    } catch (error) {
+      console.error('❌ Error sending session setup:', error);
+      this.emit('error', error);
+    }
+  }
+
   // Handle incoming messages from the API
   private handleMessage(message: RealtimeMessage): void {
-    console.log('📨 Received message:', message.type, message.data);
+    console.log('📨 Received message:', message);
+    console.log('📨 Message type:', message.type);
+    console.log('📨 Message data:', message.data);
 
+    // Add safety checks for message structure
+    if (!message || typeof message !== 'object') {
+      console.error('❌ Invalid message format:', message);
+      return;
+    }
+
+    if (!message.type) {
+      console.error('❌ Message missing type:', message);
+      return;
+    }
+
+    // Handle different message structures
+    const messageData = message.data || message;
+    
     switch (message.type) {
       case 'session.created':
-        this.sessionId = message.data.session_id;
-        console.log('🆔 Session created:', this.sessionId);
-        this.emit('sessionCreated', this.sessionId);
+        const sessionId = messageData.session_id || messageData.id;
+        if (sessionId) {
+          this.sessionId = sessionId;
+          console.log('🆔 Session created:', this.sessionId);
+          this.emit('sessionCreated', this.sessionId);
+        } else {
+          console.warn('⚠️ Session created message missing session_id:', messageData);
+        }
         break;
 
       case 'session.updated':
-        console.log('🔄 Session updated:', message.data);
-        this.emit('sessionUpdated', message.data);
+        console.log('🔄 Session updated:', messageData);
+        this.emit('sessionUpdated', messageData);
+        break;
+
+      case 'session.ready':
+        console.log('✅ Session ready for interaction');
+        this.emit('sessionReady');
         break;
 
       case 'session.ended':
@@ -228,23 +305,35 @@ export class RealtimeService extends EventEmitter {
         break;
 
       case 'session.transcript.interim':
-        console.log('📝 Interim transcript:', message.data.text);
-        this.emit('transcriptInterim', message.data.text);
+        const interimText = messageData.text || messageData.content;
+        if (interimText) {
+          console.log('📝 Interim transcript:', interimText);
+          this.emit('transcriptInterim', interimText);
+        }
         break;
 
       case 'session.transcript.final':
-        console.log('📝 Final transcript:', message.data.text);
-        this.emit('transcriptFinal', message.data.text);
+        const finalText = messageData.text || messageData.content;
+        if (finalText) {
+          console.log('📝 Final transcript:', finalText);
+          this.emit('transcriptFinal', finalText);
+        }
         break;
 
       case 'session.response.text.interim':
-        console.log('🤖 Interim response:', message.data.text);
-        this.emit('responseInterim', message.data.text);
+        const interimResponse = messageData.text || messageData.content;
+        if (interimResponse) {
+          console.log('🤖 Interim response:', interimResponse);
+          this.emit('responseInterim', interimResponse);
+        }
         break;
 
       case 'session.response.text.final':
-        console.log('🤖 Final response:', message.data.text);
-        this.emit('responseFinal', message.data.text);
+        const finalResponse = messageData.text || messageData.content;
+        if (finalResponse) {
+          console.log('🤖 Final response:', finalResponse);
+          this.emit('responseFinal', finalResponse);
+        }
         break;
 
       case 'session.response.audio_buffer.speech_started':
@@ -261,7 +350,7 @@ export class RealtimeService extends EventEmitter {
 
       case 'session.response.audio_buffer.committed':
         console.log('🎵 Audio buffer committed');
-        this.handleAudioBuffer(message.data);
+        this.handleAudioBuffer(messageData);
         break;
 
       case 'session.audio_buffer.speech_started':
@@ -275,12 +364,12 @@ export class RealtimeService extends EventEmitter {
         break;
 
       case 'error':
-        console.error('❌ API Error:', message.data);
-        this.emit('error', message.data);
+        console.error('❌ API Error:', messageData);
+        this.emit('error', messageData);
         break;
 
       default:
-        console.log('📨 Unhandled message type:', message.type);
+        console.log('📨 Unhandled message type:', message.type, messageData);
     }
   }
 
