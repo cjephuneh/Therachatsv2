@@ -5,6 +5,7 @@ export interface RealtimeConfig {
   endpoint: string;
   deployment: string;
   apiVersion?: string;
+  voice?: string;
 }
 
 export interface RealtimeMessage {
@@ -95,7 +96,7 @@ class RealtimeService {
           model: "whisper-1"
         },
         instructions: "You are TheraChat, a supportive mental health companion. Provide empathetic, helpful responses.",
-        voice: "alloy" as Voice,
+        voice: (this.config.voice || "alloy") as Voice,
         temperature: 0.8
       }
     };

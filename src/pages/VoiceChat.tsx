@@ -46,7 +46,7 @@ const VoiceChat = () => {
   
   // Configuration state
   const [selectedLanguage, setSelectedLanguage] = useState('en-US');
-  const [selectedVoice, setSelectedVoice] = useState('en-US-AriaNeural');
+  const [selectedVoice, setSelectedVoice] = useState('alloy');
   const [availableLanguages] = useState([
     { code: 'en-US', name: 'English (US)' },
     { code: 'en-GB', name: 'English (UK)' },
@@ -61,7 +61,16 @@ const VoiceChat = () => {
     { code: 'zh-CN', name: 'Chinese (Simplified)' },
     { code: 'zh-TW', name: 'Chinese (Traditional)' }
   ]);
-  const [availableVoices, setAvailableVoices] = useState<any[]>([]);
+  const [availableVoices] = useState([
+    { id: 'alloy', name: 'Alloy', description: 'Neutral, balanced voice' },
+    { id: 'ash', name: 'Ash', description: 'Warm, friendly voice' },
+    { id: 'ballad', name: 'Ballad', description: 'Smooth, melodic voice' },
+    { id: 'coral', name: 'Coral', description: 'Bright, energetic voice' },
+    { id: 'echo', name: 'Echo', description: 'Clear, professional voice' },
+    { id: 'sage', name: 'Sage', description: 'Calm, wise voice' },
+    { id: 'shimmer', name: 'Shimmer', description: 'Soft, gentle voice' },
+    { id: 'verse', name: 'Verse', description: 'Expressive, dynamic voice' }
+  ]);
   
   // Settings state
   const [autoPlay, setAutoPlay] = useState(true);
@@ -92,7 +101,8 @@ const VoiceChat = () => {
           apiKey: import.meta.env.VITE_AZURE_OPENAI_API_KEY || '',
           endpoint: import.meta.env.VITE_AZURE_REALTIME_ENDPOINT || '',
           deployment: import.meta.env.VITE_AZURE_REALTIME_DEPLOYMENT || 'gpt-4o-realtime-preview',
-          apiVersion: '2024-10-01-preview'
+          apiVersion: '2024-10-01-preview',
+          voice: selectedVoice
         };
         
         // Validate configuration
@@ -205,21 +215,116 @@ const VoiceChat = () => {
     };
   }, []);
 
-  // Update service when language changes
-  useEffect(() => {
-    if (voiceService && selectedLanguage) {
-      // Language is handled by the Realtime API automatically
-      console.log('Language changed to:', selectedLanguage);
-    }
-  }, [selectedLanguage, voiceService]);
-
   // Update service when voice changes
   useEffect(() => {
     if (voiceService && selectedVoice) {
-      // Voice is handled by the Realtime API automatically
       console.log('Voice changed to:', selectedVoice);
+      // Reinitialize service with new voice
+      const reinitializeService = async () => {
+        try {
+          await voiceService.disconnect();
+          const config: RealtimeConfig = {
+            apiKey: import.meta.env.VITE_AZURE_OPENAI_API_KEY || '',
+            endpoint: import.meta.env.VITE_AZURE_REALTIME_ENDPOINT || '',
+            deployment: import.meta.env.VITE_AZURE_REALTIME_DEPLOYMENT || 'gpt-4o-realtime-preview',
+            apiVersion: '2024-10-01-preview',
+            voice: selectedVoice
+          };
+          
+          if (!config.apiKey || !config.endpoint) {
+            throw new Error('Missing Azure OpenAI configuration');
+          }
+          
+          const newService = new RealtimeService(config);
+          
+          // Set up event listeners (same as in main useEffect)
+          newService.on('connected', () => {
+            setIsInitialized(true);
+            setIsConnected(true);
+            toast.success('Connected to Azure OpenAI Realtime API');
+          });
+          
+          newService.on('disconnected', () => {
+            setIsConnected(false);
+            toast.warning('Disconnected from Azure OpenAI Realtime API');
+          });
+          
+          newService.on('sessionCreated', (sessionId) => {
+            console.log('Session created:', sessionId);
+            toast.info('Voice session started');
+          });
+          
+          newService.on('listeningStarted', () => {
+            setIsListening(true);
+            toast.info('Listening for your voice...');
+          });
+          
+          newService.on('listeningStopped', () => {
+            setIsListening(false);
+            toast.info('Stopped listening');
+          });
+          
+          newService.on('userSpeechStarted', () => {
+            setIsProcessing(true);
+            toast.info('I hear you speaking...');
+          });
+          
+          newService.on('userSpeechStopped', () => {
+            setIsProcessing(false);
+            toast.info('Processing your speech...');
+          });
+          
+          newService.on('transcriptInterim', (text) => {
+            console.log('Interim transcript:', text);
+          });
+          
+          newService.on('transcriptFinal', (text) => {
+            console.log('Final transcript:', text);
+            setLastUserSpeech(text);
+            toast.success(`You said: "${text}"`);
+          });
+          
+          newService.on('responseInterim', (text) => {
+            console.log('Interim response:', text);
+          });
+          
+          newService.on('responseFinal', (text) => {
+            console.log('Final response:', text);
+            toast.success(`TheraChat: "${text}"`);
+          });
+          
+          newService.on('speechStarted', () => {
+            setIsSpeaking(true);
+            toast.info('TheraChat is speaking...');
+          });
+          
+          newService.on('speechStopped', () => {
+            setIsSpeaking(false);
+          });
+          
+          newService.on('audioPlayed', () => {
+            setIsPlaying(true);
+            setTimeout(() => setIsPlaying(false), 1000);
+          });
+          
+          newService.on('error', (error: any) => {
+            setError(error.message || 'An error occurred');
+            toast.error('Voice service error: ' + (error.message || 'Unknown error'));
+          });
+          
+          await newService.initialize();
+          await newService.connect();
+          setVoiceService(newService);
+          
+        } catch (error: any) {
+          setError(error.message || 'Failed to update voice');
+          toast.error('Failed to update voice');
+        }
+      };
+      
+      reinitializeService();
     }
-  }, [selectedVoice, voiceService]);
+  }, [selectedVoice]);
 
   const scrollToBottom = () => {
     // No longer needed for voice-only interface
@@ -603,8 +708,8 @@ const VoiceChat = () => {
                     </SelectTrigger>
                     <SelectContent>
                       {availableVoices.map((voice) => (
-                        <SelectItem key={voice.name} value={voice.name}>
-                          {voice.name} ({voice.gender})
+                        <SelectItem key={voice.id} value={voice.id}>
+                          {voice.name} - {voice.description}
                         </SelectItem>
                       ))}
                     </SelectContent>
