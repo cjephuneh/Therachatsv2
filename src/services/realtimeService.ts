@@ -3,7 +3,7 @@
 
 // Custom EventEmitter implementation for browser compatibility
 class EventEmitter {
-  private events: { [key: string]: Function[] } = {};
+  protected events: { [key: string]: Function[] } = {};
 
   on(event: string, listener: Function): void {
     if (!this.events[event]) {
@@ -138,10 +138,11 @@ export class RealtimeService extends EventEmitter {
   private async connect(): Promise<void> {
     return new Promise((resolve, reject) => {
       try {
-        // Build WebSocket URL
+        // Build WebSocket URL with API key
         const wsUrl = this.buildWebSocketUrl();
         console.log('🔗 Connecting to Azure OpenAI Realtime API:', wsUrl);
 
+        // Create WebSocket connection
         this.websocket = new WebSocket(wsUrl);
 
         this.websocket.onopen = () => {
@@ -182,14 +183,25 @@ export class RealtimeService extends EventEmitter {
 
   // Build WebSocket URL for Azure OpenAI Realtime API
   private buildWebSocketUrl(): string {
-    const { endpoint, deployment, apiVersion = '2024-10-01-preview' } = this.config;
+    const { endpoint, deployment, apiVersion = '2024-10-01-preview', apiKey } = this.config;
+    
+    // Validate required configuration
+    if (!endpoint || !deployment || !apiKey) {
+      throw new Error('Missing required configuration: endpoint, deployment, and apiKey must be provided');
+    }
     
     // Convert HTTPS endpoint to WSS
-    const wsEndpoint = endpoint.replace('https://', 'wss://');
+    let wsEndpoint = endpoint;
+    if (wsEndpoint.startsWith('https://')) {
+      wsEndpoint = wsEndpoint.replace('https://', 'wss://');
+    } else if (!wsEndpoint.startsWith('wss://')) {
+      wsEndpoint = `wss://${wsEndpoint}`;
+    }
     
-    // Build the WebSocket URL
-    const wsUrl = `${wsEndpoint}/openai/realtime?api-version=${apiVersion}&deployment=${deployment}`;
+    // Build the WebSocket URL with API key
+    const wsUrl = `${wsEndpoint}/openai/realtime?api-version=${apiVersion}&deployment=${deployment}&api-key=${encodeURIComponent(apiKey)}`;
     
+    console.log('🔗 Built WebSocket URL:', wsUrl.replace(apiKey, '***'));
     return wsUrl;
   }
 
@@ -549,7 +561,10 @@ export class RealtimeService extends EventEmitter {
   // Cleanup resources
   cleanup(): void {
     this.disconnect();
-    this.events = {};
+    // Clear all event listeners by removing them
+    Object.keys(this.events).forEach(event => {
+      this.events[event] = [];
+    });
   }
 }
 
