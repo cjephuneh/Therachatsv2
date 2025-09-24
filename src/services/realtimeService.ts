@@ -20,7 +20,7 @@ export interface RealtimeMessage {
   error?: any;
 }
 
-export class RealtimeService {
+class RealtimeService {
   private client: LowLevelRTClient | null = null;
   private config: RealtimeConfig;
   private isConnected: boolean = false;
@@ -390,3 +390,5 @@ export class RealtimeService {
     this.events = {};
   }
 }
+
+export default RealtimeService;
