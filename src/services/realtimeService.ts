@@ -38,6 +38,12 @@ class RealtimeService {
   async initialize(): Promise<void> {
     try {
       console.log('🚀 Initializing Realtime Service...');
+      console.log('🔧 Config:', {
+        endpoint: this.config.endpoint,
+        deployment: this.config.deployment,
+        hasApiKey: !!this.config.apiKey,
+        voice: this.config.voice
+      });
       
       // Create the LowLevelRTClient
       const endpoint = new URL(this.config.endpoint);
@@ -96,10 +102,14 @@ class RealtimeService {
           model: "whisper-1"
         },
         instructions: "You are TheraChat, a supportive mental health companion. Provide empathetic, helpful responses.",
-        voice: (this.config.voice || "alloy") as Voice,
         temperature: 0.8
       }
     };
+
+    // Only add voice if it's provided
+    if (this.config.voice) {
+      configMessage.session.voice = this.config.voice as Voice;
+    }
 
     return configMessage;
   }
@@ -150,6 +160,7 @@ class RealtimeService {
 
           case "error":
             console.error('❌ API Error:', message);
+            console.error('❌ Error details:', JSON.stringify(message, null, 2));
             this.emit('error', message);
             break;
 
